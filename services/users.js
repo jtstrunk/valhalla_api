@@ -3,11 +3,28 @@ const users = require('../repositories/users')
 const { createSession } = require('../sessions')
 const { scryptAsync } = require('../credentials')
 
-async function createUser(username, password) {
+class AccountMismatchError extends Error {
+  constructor() {
+    super('Username does not match the authenticated account')
+    this.name = 'AccountMismatchError'
+  }
+}
+
+class PlayerNotFoundError extends Error {
+  constructor() {
+    super('No player is linked to this account')
+    this.name = 'PlayerNotFoundError'
+  }
+}
+
+async function hashPassword(password) {
   const salt = randomBytes(16).toString('hex')
   const hash = await scryptAsync(password, salt, 64)
-  const passwordHash = `scrypt:${salt}:${hash.toString('hex')}`
+  return `scrypt:${salt}:${hash.toString('hex')}`
+}
 
+async function createUser(username, password) {
+  const passwordHash = await hashPassword(password)
   const id = users.insertUser(username, passwordHash)
   const token = createSession(id)
   
@@ -18,4 +35,29 @@ function listUsers() {
   return users.listUsers()
 }
 
-module.exports = { createUser, listUsers, UsernameTakenError: users.UsernameTakenError }
+async function resetPassword(userId, username, password) {
+  const passwordHash = await hashPassword(password)
+  if (users.updatePassword(userId, username, passwordHash) !== 1) {
+    throw new AccountMismatchError()
+  }
+}
+
+function updateDisplayName(authenticatedUserId, userId, displayName) {
+  if (authenticatedUserId !== userId) {
+    throw new AccountMismatchError()
+  }
+  if (users.updateDisplayName(userId, displayName) === 0) {
+    throw new PlayerNotFoundError()
+  }
+}
+
+module.exports = {
+  createUser,
+  listUsers,
+  resetPassword,
+  updateDisplayName,
+  AccountMismatchError,
+  PlayerNotFoundError,
+  UsernameTakenError: users.UsernameTakenError,
+  DisplayNameTakenError: users.DisplayNameTakenError
+}
